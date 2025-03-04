@@ -262,6 +262,7 @@ const Tcl = struct {
                             }
                         }
                         b.proc(self, args.items);
+                        if (self.inQuote) self.inQuote = false;
                     },
                     .dynamic => |d| {
                         var args = std.ArrayList([]const u8).init(arena.allocator());
@@ -282,6 +283,7 @@ const Tcl = struct {
                         for (d.params) |param| {
                             tclUnset(self, @constCast(@ptrCast(&[_][]const u8{param})));
                         }
+                        if (self.inQuote) self.inQuote = false;
                     },
                 }
             } else if (self.vars.get(exp)) |v| {
@@ -289,7 +291,6 @@ const Tcl = struct {
             } else {
                 self.appendRetval(exp);
             }
-            if (token.inQuote) self.inQuote = false;
         }
         return self.retval orelse "";
     }
@@ -315,6 +316,8 @@ pub fn main() !void {
             while (try bin.reader().readUntilDelimiterOrEof(&buff, '\n')) |line| {
                 const retval = try tcl.eval(line);
                 print("{s}> ", .{retval});
+                if (tcl.retval) |r| tcl.ally.free(r);
+                tcl.retval = null;
             }
         },
         2 => {
