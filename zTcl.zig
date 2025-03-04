@@ -155,7 +155,7 @@ const Tcl = struct {
         },
     }),
     vars: std.StringHashMap([]const u8),
-    retval: ?[]const u8 = null,
+    retval: ?[]u8 = null,
 
     pub fn init(allocator: std.mem.Allocator) !Tcl {
         var tcl = Tcl{
@@ -191,6 +191,17 @@ const Tcl = struct {
         self.ally.free(self.retval.?);
     }
 
+    fn appendRetval(tcl: *Tcl, val: []const u8) void {
+        if (tcl.retval) |retval| {
+            const tmp = tcl.ally.dupe(u8, retval) catch "oops";
+            tcl.ally.free(retval);
+            tcl.retval = std.fmt.allocPrint(tcl.ally, "{s} {s}", .{ tmp, val }) catch "";
+            tcl.ally.free(tmp);
+        } else {
+            tcl.retval = tcl.ally.dupe(u8, val) catch "";
+        }
+    }
+
     fn setRetval(tcl: *Tcl, val: []const u8) void {
         if (tcl.retval) |retval| {
             tcl.ally.free(retval);
@@ -204,10 +215,11 @@ const Tcl = struct {
         var result = std.ArrayList(u8).init(arena.allocator());
         errdefer result.deinit();
 
-        print("DEBUG EVAL: {s}\n", .{str});
         const exp = try self.eval(str);
         try result.appendSlice(exp);
-        print("DEBUG EVAL RESULT: {s}\n", .{exp});
+
+        self.ally.free(self.retval.?);
+        self.retval = null;
 
         return try result.toOwnedSlice();
     }
@@ -221,6 +233,8 @@ const Tcl = struct {
             const exp = if (token.interpolate) try self.interpolate(&arena, token.str) else token.str;
 
             if (self.commands.get(exp)) |command| {
+                if (self.retval) |r| self.ally.free(r);
+                self.retval = null;
                 switch (command) {
                     .builtin => |b| {
                         var args = std.ArrayList([]const u8).init(arena.allocator());
@@ -256,9 +270,9 @@ const Tcl = struct {
                     },
                 }
             } else if (self.vars.get(exp)) |v| {
-                self.setRetval(v);
+                self.appendRetval(v);
             } else {
-                self.setRetval(exp);
+                self.appendRetval(exp);
             }
         }
         return self.retval orelse "";
