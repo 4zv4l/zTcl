@@ -4,12 +4,14 @@ const print = std.debug.print;
 const Token = struct {
     interpolate: bool = false,
     str: []const u8,
+    inQuote: bool = false,
 
     const Iterator = struct {
         str: []const u8,
+        inQuote: *bool,
 
-        pub fn init(str: []const u8) Iterator {
-            return .{ .str = str };
+        pub fn init(str: []const u8, inQuote: *bool) Iterator {
+            return .{ .str = str, .inQuote = inQuote };
         }
 
         fn findClosing(str: []const u8, open: u8, close: u8) ?usize {
@@ -45,7 +47,7 @@ const Token = struct {
                     '"' => {
                         const idx = findClosing(self.str[1..], '"', '"') orelse return error.Missing;
                         defer self.str = self.str[idx + 1 ..];
-                        return .{ .str = self.str[1..idx], .interpolate = true };
+                        return .{ .str = self.str[1..idx], .interpolate = true, .inQuote = true };
                     },
                     '[' => {
                         const idx = findClosing(self.str[1..], '[', ']') orelse return error.Missing;
@@ -61,12 +63,21 @@ const Token = struct {
                         return .{ .str = self.str[1 .. idx + 1], .interpolate = true };
                     },
                     else => { // its a command or string
-                        const idx = std.mem.indexOfAny(u8, self.str, " ;\n\r") orelse {
-                            defer self.str = self.str[self.str.len..];
-                            return .{ .str = self.str };
-                        };
-                        defer self.str = self.str[idx + 1 ..];
-                        return .{ .str = self.str[0..idx] };
+                        if (self.inQuote.*) {
+                            const idx = std.mem.indexOfAny(u8, self.str, "$") orelse {
+                                defer self.str = self.str[self.str.len..];
+                                return .{ .str = self.str };
+                            };
+                            defer self.str = self.str[idx..];
+                            return .{ .str = self.str[0..idx] };
+                        } else {
+                            const idx = std.mem.indexOfAny(u8, self.str, " ;\n\r") orelse {
+                                defer self.str = self.str[self.str.len..];
+                                return .{ .str = self.str };
+                            };
+                            defer self.str = self.str[idx + 1 ..];
+                            return .{ .str = self.str[0..idx] };
+                        }
                     },
                 }
             }
@@ -156,6 +167,7 @@ const Tcl = struct {
     }),
     vars: std.StringHashMap([]const u8),
     retval: ?[]u8 = null,
+    inQuote: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !Tcl {
         var tcl = Tcl{
@@ -195,7 +207,7 @@ const Tcl = struct {
         if (tcl.retval) |retval| {
             const tmp = tcl.ally.dupe(u8, retval) catch "oops";
             tcl.ally.free(retval);
-            tcl.retval = std.fmt.allocPrint(tcl.ally, "{s} {s}", .{ tmp, val }) catch "";
+            tcl.retval = std.fmt.allocPrint(tcl.ally, "{s}{s}", .{ tmp, val }) catch "";
             tcl.ally.free(tmp);
         } else {
             tcl.retval = tcl.ally.dupe(u8, val) catch "";
@@ -225,11 +237,12 @@ const Tcl = struct {
     }
 
     pub fn eval(self: *Tcl, str: []const u8) anyerror![]const u8 {
-        var it = Token.Iterator.init(str);
+        var it = Token.Iterator.init(str, &self.inQuote);
         while (try it.next()) |token| {
             var arena = std.heap.ArenaAllocator.init(self.ally);
             defer arena.deinit();
 
+            if (token.inQuote) self.inQuote = true;
             const exp = if (token.interpolate) try self.interpolate(&arena, token.str) else token.str;
 
             if (self.commands.get(exp)) |command| {
@@ -241,6 +254,7 @@ const Tcl = struct {
                         defer args.deinit();
                         for (0..b.arity) |_| {
                             const tok = try it.next() orelse return error.ExpectingToken;
+                            if (tok.inQuote) self.inQuote = true;
                             if (tok.interpolate) {
                                 try args.append(try self.interpolate(&arena, tok.str));
                             } else {
@@ -254,6 +268,7 @@ const Tcl = struct {
                         defer args.deinit();
                         for (0..d.params.len) |_| {
                             const tok = try it.next() orelse return error.ExpectingToken;
+                            if (tok.inQuote) self.inQuote = true;
                             if (tok.interpolate) {
                                 try args.append(try self.interpolate(&arena, tok.str));
                             } else {
@@ -274,6 +289,7 @@ const Tcl = struct {
             } else {
                 self.appendRetval(exp);
             }
+            if (token.inQuote) self.inQuote = false;
         }
         return self.retval orelse "";
     }
