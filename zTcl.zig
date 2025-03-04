@@ -117,6 +117,31 @@ fn tclProc(tcl: *Tcl, args: [][]const u8) void {
     tcl.commands.put(name, .{ .dynamic = .{ .params = params.toOwnedSlice() catch return, .code = body } }) catch {};
 }
 
+fn tclIf(tcl: *Tcl, args: [][]const u8) void {
+    const cond = args[0];
+    const ifok = args[1];
+    const ifnot = args[3];
+
+    if (!std.mem.eql(u8, cond, "0")) {
+        tcl.setRetval(tcl.eval(ifok) catch "");
+    } else {
+        tcl.setRetval(tcl.eval(ifnot) catch "");
+    }
+}
+
+fn tclWhile(tcl: *Tcl, args: [][]const u8) void {
+    const cond = args[0];
+    const body = args[1];
+
+    while (true) {
+        _ = tcl.eval(cond) catch "0";
+        if (tcl.retval.?[0] == 0) break; // figure out why 0 and not '0'
+
+        const body_result = tcl.eval(body) catch "0";
+        tcl.setRetval(body_result);
+    }
+}
+
 fn tclPlus(tcl: *Tcl, args: [][]const u8) void {
     const n1 = std.fmt.parseInt(isize, args[0], 10) catch 0;
     const n2 = std.fmt.parseInt(isize, args[1], 10) catch 0;
@@ -181,6 +206,8 @@ const Tcl = struct {
         try tcl.commands.put("unset", .{ .builtin = .{ .proc = tclUnset, .arity = 1 } });
         try tcl.commands.put("dumpvar", .{ .builtin = .{ .proc = tclDumpVar, .arity = 0 } });
         try tcl.commands.put("proc", .{ .builtin = .{ .proc = tclProc, .arity = 3 } });
+        try tcl.commands.put("if", .{ .builtin = .{ .proc = tclIf, .arity = 4 } });
+        try tcl.commands.put("while", .{ .builtin = .{ .proc = tclWhile, .arity = 2 } });
         try tcl.commands.put("+", .{ .builtin = .{ .proc = tclPlus, .arity = 2 } });
         try tcl.commands.put("-", .{ .builtin = .{ .proc = tclMinus, .arity = 2 } });
         try tcl.commands.put("*", .{ .builtin = .{ .proc = tclMultiply, .arity = 2 } });
@@ -292,7 +319,7 @@ const Tcl = struct {
                 self.appendRetval(exp);
             }
         }
-        return self.retval orelse "";
+        return self.retval orelse "oops";
     }
 };
 
