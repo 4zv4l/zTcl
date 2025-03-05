@@ -134,11 +134,11 @@ fn tclWhile(tcl: *Tcl, args: [][]const u8) void {
     const body = args[1];
 
     while (true) {
-        _ = tcl.eval(cond) catch "0";
-        if (tcl.retval.?[0] == 0) break; // figure out why 0 and not '0'
+        const cond_result = tcl.eval(cond) catch "0";
 
-        const body_result = tcl.eval(body) catch "0";
-        tcl.setRetval(body_result);
+        if (cond_result[0] == '0') break;
+
+        _ = tcl.eval(body) catch "0";
     }
 }
 
@@ -232,7 +232,7 @@ const Tcl = struct {
 
     fn appendRetval(tcl: *Tcl, val: []const u8) void {
         if (tcl.retval) |retval| {
-            const tmp = tcl.ally.dupe(u8, retval) catch "oops";
+            const tmp = tcl.ally.dupe(u8, retval) catch "oops_appendRetval";
             tcl.ally.free(retval);
             tcl.retval = std.fmt.allocPrint(tcl.ally, "{s}{s}", .{ tmp, val }) catch "";
             tcl.ally.free(tmp);
@@ -319,7 +319,7 @@ const Tcl = struct {
                 self.appendRetval(exp);
             }
         }
-        return self.retval orelse "oops";
+        return self.retval.?;
     }
 };
 
