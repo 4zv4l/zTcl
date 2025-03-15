@@ -72,7 +72,6 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
             if (std.mem.eql(u8, cond_result, "1")) {
                 return tcl.eval(ifok) catch @panic("eval ifok");
             }
-            print("IF BODY\n", .{});
         },
         4 => {
             const ifnot = args[3]; // skip else keyword
@@ -199,29 +198,39 @@ pub const Tcl = struct {
         self.commands.deinit();
     }
 
-    // replace '$var' by their variable value in string
-    // need to make this better
-    pub fn interpolate(self: *Tcl, str: []const u8) anyerror![]const u8 {
-        var result = std.ArrayList([]const u8).init(self.ally);
+    // replace '$var' by their variable value in str
+    pub fn interpolate(self: *Tcl, s: []const u8) anyerror![]const u8 {
+        var result = std.ArrayList(u8).init(self.ally);
         defer result.deinit();
 
-        var wordit = std.mem.tokenizeAny(u8, str, " ");
-        while (wordit.next()) |word| {
-            if (word[0] != '$') { // hack because this interpolate() sucks
-                try result.append(word);
-                continue;
-            }
-            var elementit = std.mem.tokenizeScalar(u8, word, '$');
-            while (elementit.next()) |element| {
-                if (self.vars.get(element)) |variable| {
-                    try result.append(variable);
-                } else {
-                    try result.append(element);
-                }
+        var str = s;
+        while (true) {
+            if (str.len == 0) break;
+            switch (str[0]) {
+                '$' => {
+                    const i = std.mem.indexOfAny(u8, str[1..], "$ ,;!\n\r") orelse {
+                        defer str = str[str.len..];
+                        if (self.vars.get(str[1..])) |variable| {
+                            try result.appendSlice(variable);
+                        } else {
+                            try result.appendSlice(str[1..]);
+                        }
+                        continue;
+                    };
+                    defer str = str[i + 1 ..];
+                    if (self.vars.get(str[1 .. i + 1])) |variable| {
+                        try result.appendSlice(variable);
+                    } else {
+                        try result.appendSlice(str[0 .. i + 1]);
+                    }
+                },
+                else => {
+                    try result.append(str[0]);
+                    str = str[1..];
+                },
             }
         }
-
-        return try std.mem.join(self.ally, " ", result.items);
+        return try result.toOwnedSlice();
     }
 
     pub fn eval(self: *Tcl, str: []const u8) anyerror![]const u8 {

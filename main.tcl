@@ -1,17 +1,21 @@
-puts 1 # heyy
-puts {+ 1 2}
-puts [+ 2 2]
-puts [+ [+ 2 2] [+ 1 1]]
+proc greet {name family} {
+    puts "test"
+    puts "Hello $name $family !"
+}
+set myname Simon
+greet $myname Blacks
+unset myname
 
-proc greet {name} {
-    puts "FIRST LINE"
-    puts "SECOND LINE"
+set A 2
+set C 1
+set B 0
+while {!= $A $B} {
+    set B [+ $B $C]
+    dumpvar
 }
 
-# cause a recursive panic
-greet
+if {== $B 2} { puts $B }
 
-set name Simon
-
-# cause a recursive panic
-dumpvar
+set pu pu
+set ts ts
+"$pu$ts" "Heyyy $B$A!"
