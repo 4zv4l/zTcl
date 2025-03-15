@@ -14,7 +14,7 @@ pub fn tclSet(tcl: *Tcl, args: []const []const u8) []const u8 {
             if (variable_maybe) |variable| return tcl.ally.dupe(u8, variable) catch @panic("no such variable");
         },
         2 => {
-            tcl.vars.put(args[0], tcl.ally.dupe(u8, args[1]) catch @panic("set dupe")) catch @panic("couldnt set var");
+            tcl.vars.put(tcl.ally.dupe(u8, args[0]) catch @panic("set dupe"), tcl.ally.dupe(u8, args[1]) catch @panic("set dupe")) catch @panic("couldnt set var");
         },
         else => @panic("weird argument number for set"),
     }
@@ -41,7 +41,7 @@ pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
 
     var paramit = std.mem.tokenizeScalar(u8, args[1], ' ');
     while (paramit.next()) |param| params.append(param) catch {};
-    tcl.commands.put(name, .{ .dynamic = .{
+    tcl.commands.put(tcl.ally.dupe(u8, name) catch @panic("dupe proc name"), .{ .dynamic = .{
         .params = params.toOwnedSlice() catch @panic("proc params"),
         .code = tcl.ally.dupe(u8, body) catch @panic("dupe code"),
     } }) catch @panic("couldnt save proc");
@@ -147,35 +147,41 @@ pub const Tcl = struct {
     // remove all var data then deinit hash
     // then free all builtin commands then deinit hash
     pub fn deinit(self: *Tcl) void {
-        var variableit = self.vars.valueIterator();
-        while (variableit.next()) |variable| self.ally.free(variable.*);
+        var variableit = self.vars.iterator();
+        while (variableit.next()) |entry| {
+            self.ally.free(entry.key_ptr.*);
+            self.ally.free(entry.value_ptr.*);
+        }
         self.vars.deinit();
 
-        var commandit = self.commands.valueIterator();
-        while (commandit.next()) |entry| switch (entry.*) {
-            .dynamic => |d| {
-                self.ally.free(d.params);
-                self.ally.free(d.code);
-            },
-            else => {},
-        };
+        var commandit = self.commands.iterator();
+        while (commandit.next()) |entry| {
+            self.ally.free(entry.key_ptr.*);
+            if (entry.value_ptr.* == .dynamic) {
+                self.ally.free(entry.value_ptr.dynamic.params);
+                self.ally.free(entry.value_ptr.dynamic.code);
+            }
+        }
         self.commands.deinit();
     }
 
     pub fn interpolate(self: *Tcl, str: []const u8) ![]const u8 {
-        var result = std.ArrayList(u8).init(self.ally);
-        errdefer result.deinit();
+        var result = std.ArrayList([]const u8).init(self.ally);
+        defer result.deinit();
 
-        var wordit = std.mem.tokenizeAny(u8, str, " $\n");
+        var wordit = std.mem.tokenizeAny(u8, str, " ");
         while (wordit.next()) |word| {
-            if (word[0] == '$') {
-                try result.appendSlice(self.vars.get(word).?);
-            } else {
-                try result.appendSlice(word);
+            var elementit = std.mem.tokenizeAny(u8, word, "$\n");
+            while (elementit.next()) |element| {
+                if (element[0] == '$') {
+                    try result.append(self.vars.get(element).?);
+                } else {
+                    try result.append(element);
+                }
             }
         }
 
-        return try result.toOwnedSlice();
+        return try std.mem.join(self.ally, " ", result.items);
     }
 
     pub fn eval(self: *Tcl, str: []const u8) anyerror![]const u8 {
