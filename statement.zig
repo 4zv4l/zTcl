@@ -19,7 +19,7 @@ pub const StatementIterator = struct {
             const exp = switch (token) {
                 .bracket => |str| try self.tcl.eval(str),
                 .quote, .string => |str| try self.tcl.interpolate(str),
-                .variable => |str| self.tcl.vars.get(str).?,
+                .variable => |str| self.tcl.vars.get(str) orelse str,
                 .brace => |str| str,
                 .ends => {
                     if (self.tokens.items.len == 0) {

@@ -62,20 +62,22 @@ pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
+    const cond = args[0];
+    const ifok = args[1];
+    const cond_result = tcl.eval(cond) catch @panic("while eval cond");
+    defer tcl.ally.free(cond_result);
+
     switch (args.len) {
         2 => {
-            const cond = args[0];
-            const ifok = args[1];
-            if (std.mem.eql(u8, cond, "1")) {
+            if (std.mem.eql(u8, cond_result, "1")) {
                 return tcl.eval(ifok) catch @panic("eval ifok");
             }
+            print("IF BODY\n", .{});
         },
         4 => {
-            const cond = args[0];
-            const ifok = args[1];
             const ifnot = args[3]; // skip else keyword
 
-            if (std.mem.eql(u8, cond, "1")) {
+            if (std.mem.eql(u8, cond_result, "1")) {
                 return tcl.eval(ifok) catch @panic("eval else ifok");
             }
             return tcl.eval(ifnot) catch @panic("eval else ifnot");
@@ -199,7 +201,7 @@ pub const Tcl = struct {
 
     // replace '$var' by their variable value in string
     // need to make this better
-    pub fn interpolate(self: *Tcl, str: []const u8) ![]const u8 {
+    pub fn interpolate(self: *Tcl, str: []const u8) anyerror![]const u8 {
         var result = std.ArrayList([]const u8).init(self.ally);
         defer result.deinit();
 
