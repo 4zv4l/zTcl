@@ -15,6 +15,7 @@ while {!= $A $B} {
 }
 
 if {== $B 2} { puts $B }
+if {!= $B 3} { puts "B is not 3" }
 
 set pu pu
 set ts ts
