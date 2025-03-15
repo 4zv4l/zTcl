@@ -16,12 +16,11 @@ pub const StatementIterator = struct {
         errdefer self.tokens.deinit();
 
         while (try self.tokenit.next()) |token| {
-            std.debug.print("got token: {}\n", .{token});
             const exp = switch (token) {
                 .bracket => |str| try self.tcl.eval(str),
-                .quote => |str| try self.tcl.interpolate(str),
+                .quote, .string => |str| try self.tcl.interpolate(str),
                 .variable => |str| self.tcl.vars.get(str).?,
-                .brace, .string => |str| str,
+                .brace => |str| str,
                 .ends => {
                     if (self.tokens.items.len == 0) {
                         continue;
@@ -32,7 +31,7 @@ pub const StatementIterator = struct {
             };
             switch (token) {
                 // already duped by eval/interpolate
-                .bracket, .quote => try self.tokens.append(exp),
+                .bracket, .quote, .string => try self.tokens.append(exp),
                 else => try self.tokens.append(try self.ally.dupe(u8, exp)),
             }
         }

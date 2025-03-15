@@ -2,6 +2,7 @@ const std = @import("std");
 const StatementIterator = @import("statement.zig").StatementIterator;
 const print = std.debug.print;
 
+// Builtins
 pub fn tclPuts(_: *Tcl, args: []const []const u8) []const u8 {
     print("{s}\n", .{args[0]});
     return "";
@@ -14,7 +15,10 @@ pub fn tclSet(tcl: *Tcl, args: []const []const u8) []const u8 {
             if (variable_maybe) |variable| return tcl.ally.dupe(u8, variable) catch @panic("no such variable");
         },
         2 => {
-            tcl.vars.put(tcl.ally.dupe(u8, args[0]) catch @panic("set dupe"), tcl.ally.dupe(u8, args[1]) catch @panic("set dupe")) catch @panic("couldnt set var");
+            if (tcl.vars.get(args[0])) |_| _ = tclUnset(tcl, @ptrCast(&[_][]const u8{args[0]}));
+            const varname = tcl.ally.dupe(u8, args[0]) catch @panic("set dupe");
+            const varvalue = tcl.ally.dupe(u8, args[1]) catch @panic("set dupe");
+            tcl.vars.put(varname, varvalue) catch @panic("setting var");
         },
         else => @panic("weird argument number for set"),
     }
@@ -22,7 +26,11 @@ pub fn tclSet(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclUnset(tcl: *Tcl, args: []const []const u8) []const u8 {
-    _ = tcl.commands.remove(args[0]);
+    if (tcl.vars.getEntry(args[0])) |_| {
+        const ptr = tcl.vars.fetchRemove(args[0]);
+        tcl.ally.free(ptr.?.key);
+        tcl.ally.free(ptr.?.value);
+    }
     return "";
 }
 
@@ -36,15 +44,20 @@ pub fn tclDumpVar(tcl: *Tcl, _: []const []const u8) []const u8 {
 pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
     var params = std.ArrayList([]const u8).init(tcl.ally);
     errdefer params.deinit();
-    const name = args[0];
-    const body = args[2];
+    //const name = tcl.ally.dupe(u8, args[0]) catch @panic("dupe name");
+    const name = tcl.ally.dupe(u8, args[0]) catch @panic("dupe name");
+    const body = tcl.ally.dupe(u8, args[2]) catch @panic("dupe body");
 
-    var paramit = std.mem.tokenizeScalar(u8, args[1], ' ');
-    while (paramit.next()) |param| params.append(param) catch {};
-    tcl.commands.put(tcl.ally.dupe(u8, name) catch @panic("dupe proc name"), .{ .dynamic = .{
+    var paramit = std.mem.tokenizeAny(u8, args[1], " ");
+    while (paramit.next()) |param| {
+        const dparam = tcl.ally.dupe(u8, param) catch @panic("dupe param");
+        params.append(dparam) catch @panic("params append");
+    }
+    tcl.commands.put(name, .{ .dynamic = .{
         .params = params.toOwnedSlice() catch @panic("proc params"),
-        .code = tcl.ally.dupe(u8, body) catch @panic("dupe code"),
+        .code = body,
     } }) catch @panic("couldnt save proc");
+
     return "";
 }
 
@@ -53,7 +66,7 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
         2 => {
             const cond = args[0];
             const ifok = args[1];
-            if (!std.mem.eql(u8, cond, "0")) {
+            if (std.mem.eql(u8, cond, "1")) {
                 return tcl.eval(ifok) catch @panic("eval ifok");
             }
         },
@@ -62,7 +75,7 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
             const ifok = args[1];
             const ifnot = args[3]; // skip else keyword
 
-            if (!std.mem.eql(u8, cond, "0")) {
+            if (std.mem.eql(u8, cond, "1")) {
                 return tcl.eval(ifok) catch @panic("eval else ifok");
             }
             return tcl.eval(ifnot) catch @panic("eval else ifnot");
@@ -78,10 +91,26 @@ pub fn tclWhile(tcl: *Tcl, args: []const []const u8) []const u8 {
 
     while (true) {
         const cond_result = tcl.eval(cond) catch @panic("while eval cond");
+        defer tcl.ally.free(cond_result);
         if (cond_result[0] == '0') break;
-        return tcl.eval(body) catch @panic("while eval body");
+
+        const body_result = tcl.eval(body) catch @panic("while eval body");
+        defer tcl.ally.free(body_result);
     }
     return "";
+}
+
+pub fn tclEql(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (std.mem.eql(u8, args[0], args[1])) {
+        return tcl.ally.dupe(u8, "1") catch @panic("eql");
+    }
+    return tcl.ally.dupe(u8, "0") catch @panic("eql");
+}
+pub fn tclNotEql(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (!std.mem.eql(u8, args[0], args[1])) {
+        return tcl.ally.dupe(u8, "1") catch @panic("eql");
+    }
+    return tcl.ally.dupe(u8, "0") catch @panic("eql");
 }
 
 pub fn tclPlus(tcl: *Tcl, args: []const []const u8) []const u8 {
@@ -124,6 +153,7 @@ pub const Tcl = struct {
         },
     }),
 
+    // setup interpretor and add builtin commands
     pub fn init(allocator: std.mem.Allocator) !Tcl {
         var tcl = Tcl{
             .ally = allocator,
@@ -137,6 +167,8 @@ pub const Tcl = struct {
         try tcl.commands.put("proc", .{ .builtin = .{ .proc = tclProc } });
         try tcl.commands.put("if", .{ .builtin = .{ .proc = tclIf } });
         try tcl.commands.put("while", .{ .builtin = .{ .proc = tclWhile } });
+        try tcl.commands.put("==", .{ .builtin = .{ .proc = tclEql } });
+        try tcl.commands.put("!=", .{ .builtin = .{ .proc = tclNotEql } });
         try tcl.commands.put("+", .{ .builtin = .{ .proc = tclPlus } });
         try tcl.commands.put("-", .{ .builtin = .{ .proc = tclMinus } });
         try tcl.commands.put("*", .{ .builtin = .{ .proc = tclMultiply } });
@@ -144,8 +176,7 @@ pub const Tcl = struct {
         return tcl;
     }
 
-    // remove all var data then deinit hash
-    // then free all builtin commands then deinit hash
+    // free variables and commands
     pub fn deinit(self: *Tcl) void {
         var variableit = self.vars.iterator();
         while (variableit.next()) |entry| {
@@ -156,25 +187,32 @@ pub const Tcl = struct {
 
         var commandit = self.commands.iterator();
         while (commandit.next()) |entry| {
-            self.ally.free(entry.key_ptr.*);
             if (entry.value_ptr.* == .dynamic) {
-                self.ally.free(entry.value_ptr.dynamic.params);
-                self.ally.free(entry.value_ptr.dynamic.code);
+                for (entry.value_ptr.*.dynamic.params) |param| self.ally.free(param);
+                self.ally.free(entry.value_ptr.*.dynamic.params);
+                self.ally.free(entry.value_ptr.*.dynamic.code);
+                self.ally.free(entry.key_ptr.*);
             }
         }
         self.commands.deinit();
     }
 
+    // replace '$var' by their variable value in string
+    // need to make this better
     pub fn interpolate(self: *Tcl, str: []const u8) ![]const u8 {
         var result = std.ArrayList([]const u8).init(self.ally);
         defer result.deinit();
 
         var wordit = std.mem.tokenizeAny(u8, str, " ");
         while (wordit.next()) |word| {
-            var elementit = std.mem.tokenizeAny(u8, word, "$\n");
+            if (word[0] != '$') { // hack because this interpolate() sucks
+                try result.append(word);
+                continue;
+            }
+            var elementit = std.mem.tokenizeScalar(u8, word, '$');
             while (elementit.next()) |element| {
-                if (element[0] == '$') {
-                    try result.append(self.vars.get(element).?);
+                if (self.vars.get(element)) |variable| {
+                    try result.append(variable);
                 } else {
                     try result.append(element);
                 }
@@ -190,7 +228,6 @@ pub const Tcl = struct {
 
         var statementit = StatementIterator.init(self, self.ally, str);
         while (try statementit.next()) |statement| {
-            print("got statement: {s}\n", .{statement});
             defer self.ally.free(statement);
             defer for (statement) |s| self.ally.free(s);
 
@@ -198,7 +235,6 @@ pub const Tcl = struct {
                 switch (proc) {
                     .builtin => |b| {
                         const proc_result = b.proc(self, statement[1..]);
-                        print("proc_result: {s}, len: {d}\n", .{ proc_result, proc_result.len });
                         if (proc_result.len > 0) {
                             defer self.ally.free(proc_result);
                             try result.appendSlice(proc_result);
@@ -210,7 +246,6 @@ pub const Tcl = struct {
                             _ = tclSet(self, @ptrCast(&[_][]const u8{ param, arg }));
                         }
                         const proc_result = try self.eval(d.code);
-                        print("proc_result: {s}, len: {d}\n", .{ proc_result, proc_result.len });
                         defer self.ally.free(proc_result);
                         try result.appendSlice(proc_result);
                         // remove parameter from variables
