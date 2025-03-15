@@ -14,7 +14,7 @@ pub fn tclSet(tcl: *Tcl, args: []const []const u8) []const u8 {
             if (variable_maybe) |variable| return tcl.ally.dupe(u8, variable) catch @panic("no such variable");
         },
         2 => {
-            tcl.vars.put(args[0], tcl.ally.dupe(u8, args[1]) catch "oops") catch @panic("couldnt set var");
+            tcl.vars.put(args[0], tcl.ally.dupe(u8, args[1]) catch @panic("set dupe")) catch @panic("couldnt set var");
         },
         else => @panic("weird argument number for set"),
     }
@@ -43,7 +43,7 @@ pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
     while (paramit.next()) |param| params.append(param) catch {};
     tcl.commands.put(name, .{ .dynamic = .{
         .params = params.toOwnedSlice() catch @panic("proc params"),
-        .code = body,
+        .code = tcl.ally.dupe(u8, body) catch @panic("dupe code"),
     } }) catch @panic("couldnt save proc");
     return "";
 }
@@ -155,6 +155,7 @@ pub const Tcl = struct {
         while (commandit.next()) |entry| switch (entry.*) {
             .dynamic => |d| {
                 self.ally.free(d.params);
+                self.ally.free(d.code);
             },
             else => {},
         };
@@ -187,12 +188,9 @@ pub const Tcl = struct {
             defer self.ally.free(statement);
             defer for (statement) |s| self.ally.free(s);
 
-            print("STATEMENT[0]: '{s}'\n", .{statement[0]});
             if (self.commands.get(statement[0])) |proc| {
-                print("raw proc: {}\n", .{proc});
                 switch (proc) {
                     .builtin => |b| {
-                        print("calling builtin {s}\n", .{statement[0]});
                         const proc_result = b.proc(self, statement[1..]);
                         print("proc_result: {s}, len: {d}\n", .{ proc_result, proc_result.len });
                         if (proc_result.len > 0) {
@@ -201,7 +199,6 @@ pub const Tcl = struct {
                         }
                     },
                     .dynamic => |d| {
-                        print("setting up var for proc {s}\n", .{statement[0]});
                         // add parameter to variables
                         for (d.params, statement[1..]) |param, arg| {
                             _ = tclSet(self, @ptrCast(&[_][]const u8{ param, arg }));
