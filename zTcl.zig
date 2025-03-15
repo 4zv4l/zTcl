@@ -11,11 +11,12 @@ pub fn tclSet(tcl: *Tcl, args: []const []const u8) []const u8 {
     switch (args.len) {
         1 => {
             const variable_maybe = tcl.vars.get(args[0]);
-            if (variable_maybe) |variable| return tcl.ally.dupe(u8, variable) catch "";
+            if (variable_maybe) |variable| return tcl.ally.dupe(u8, variable) catch @panic("no such variable");
         },
-        else => {
-            tcl.vars.put(args[0], tcl.ally.dupe(u8, args[1]) catch "oops") catch {};
+        2 => {
+            tcl.vars.put(args[0], tcl.ally.dupe(u8, args[1]) catch "oops") catch @panic("couldnt set var");
         },
+        else => @panic("weird argument number for set"),
     }
     return "";
 }
@@ -28,7 +29,7 @@ pub fn tclUnset(tcl: *Tcl, args: []const []const u8) []const u8 {
 pub fn tclDumpVar(tcl: *Tcl, _: []const []const u8) []const u8 {
     print("Defined vars:\n", .{});
     var it = tcl.vars.iterator();
-    while (it.next()) |entry| print("- {s} = {s}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+    while (it.next()) |e| print("- {s} = {s}\n", .{ e.key_ptr.*, e.value_ptr.* });
     return "";
 }
 

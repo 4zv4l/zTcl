@@ -17,18 +17,21 @@ pub const StatementIterator = struct {
 
         while (try self.tokenit.next()) |token| {
             std.debug.print("got token: {}\n", .{token});
-            if (token == .ends) break;
 
             try self.tokens.append(try self.ally.dupe(u8, switch (token) {
                 .quote => |str| try self.tcl.interpolate(str),
                 .variable => |str| self.tcl.vars.get(str).?,
                 .bracket => |str| try self.tcl.eval(str),
                 .brace, .string => |str| str,
-                .ends => unreachable,
+                .ends => {
+                    if (self.tokens.items.len == 0) {
+                        continue;
+                    } else {
+                        return try self.tokens.toOwnedSlice();
+                    }
+                },
             }));
         }
-        if (self.tokens.items.len == 0) return null;
-
-        return try self.tokens.toOwnedSlice();
+        return null;
     }
 };
