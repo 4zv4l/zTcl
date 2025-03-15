@@ -34,26 +34,42 @@ pub fn tclDumpVar(tcl: *Tcl, _: []const []const u8) []const u8 {
 }
 
 pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
-    const name = args[0];
     var params = std.ArrayList([]const u8).init(tcl.ally);
     errdefer params.deinit();
+    const name = args[0];
     const body = args[2];
 
     var paramit = std.mem.tokenizeScalar(u8, args[1], ' ');
     while (paramit.next()) |param| params.append(param) catch {};
-    tcl.commands.put(name, .{ .dynamic = .{ .params = params.toOwnedSlice() catch return "", .code = body } }) catch {};
+    tcl.commands.put(name, .{ .dynamic = .{
+        .params = params.toOwnedSlice() catch @panic("proc params"),
+        .code = body,
+    } }) catch @panic("couldnt save proc");
     return "";
 }
 
 pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
-    const cond = args[0];
-    const ifok = args[1];
-    const ifnot = args[3];
+    switch (args.len) {
+        2 => {
+            const cond = args[0];
+            const ifok = args[1];
+            if (!std.mem.eql(u8, cond, "0")) {
+                return tcl.eval(ifok) catch @panic("eval ifok");
+            }
+        },
+        4 => {
+            const cond = args[0];
+            const ifok = args[1];
+            const ifnot = args[3]; // skip else keyword
 
-    if (!std.mem.eql(u8, cond, "0")) {
-        return tcl.eval(ifok) catch "";
+            if (!std.mem.eql(u8, cond, "0")) {
+                return tcl.eval(ifok) catch @panic("eval else ifok");
+            }
+            return tcl.eval(ifnot) catch @panic("eval else ifnot");
+        },
+        else => @panic("if weird number of argument"),
     }
-    return tcl.eval(ifnot) catch "";
+    return "";
 }
 
 pub fn tclWhile(tcl: *Tcl, args: []const []const u8) []const u8 {
@@ -61,11 +77,9 @@ pub fn tclWhile(tcl: *Tcl, args: []const []const u8) []const u8 {
     const body = args[1];
 
     while (true) {
-        const cond_result = tcl.eval(cond) catch "0";
-
+        const cond_result = tcl.eval(cond) catch @panic("while eval cond");
         if (cond_result[0] == '0') break;
-
-        _ = tcl.eval(body) catch "0";
+        return tcl.eval(body) catch @panic("while eval body");
     }
     return "";
 }
@@ -166,15 +180,19 @@ pub const Tcl = struct {
     pub fn eval(self: *Tcl, str: []const u8) anyerror![]const u8 {
         var result = std.ArrayList(u8).init(self.ally);
         errdefer result.deinit();
+
         var statementit = StatementIterator.init(self, self.ally, str);
         while (try statementit.next()) |statement| {
             print("got statement: {s}\n", .{statement});
             defer self.ally.free(statement);
             defer for (statement) |s| self.ally.free(s);
 
+            print("STATEMENT[0]: '{s}'\n", .{statement[0]});
             if (self.commands.get(statement[0])) |proc| {
+                print("raw proc: {}\n", .{proc});
                 switch (proc) {
                     .builtin => |b| {
+                        print("calling builtin {s}\n", .{statement[0]});
                         const proc_result = b.proc(self, statement[1..]);
                         print("proc_result: {s}, len: {d}\n", .{ proc_result, proc_result.len });
                         if (proc_result.len > 0) {
@@ -183,16 +201,18 @@ pub const Tcl = struct {
                         }
                     },
                     .dynamic => |d| {
+                        print("setting up var for proc {s}\n", .{statement[0]});
+                        // add parameter to variables
                         for (d.params, statement[1..]) |param, arg| {
-                            const r = tclSet(self, @constCast(@ptrCast(&[_][]const u8{ param, arg })));
-                            if (r.len > 0) self.ally.free(r);
+                            _ = tclSet(self, @ptrCast(&[_][]const u8{ param, arg }));
                         }
                         const proc_result = try self.eval(d.code);
+                        print("proc_result: {s}, len: {d}\n", .{ proc_result, proc_result.len });
                         defer self.ally.free(proc_result);
                         try result.appendSlice(proc_result);
+                        // remove parameter from variables
                         for (d.params) |param| {
-                            const r = tclUnset(self, @constCast(@ptrCast(&[_][]const u8{param})));
-                            if (r.len > 0) self.ally.free(r);
+                            _ = tclUnset(self, @ptrCast(&[_][]const u8{param}));
                         }
                     },
                 }
@@ -223,7 +243,8 @@ pub fn main() !void {
 
             var tcl = try Tcl.init(allocator);
             defer tcl.deinit();
-            _ = try tcl.eval(filedata);
+            const result = try tcl.eval(filedata);
+            tcl.ally.free(result);
         },
         else => {
             print("usage: zTcl [filename]\n", .{});

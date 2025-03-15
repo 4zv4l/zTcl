@@ -47,7 +47,7 @@ pub const TokenIterator = struct {
         while (true) {
             if (self.str.len == 0) return null;
             switch (self.str[0]) {
-                ' ' => {
+                ' ', '\t' => {
                     self.str = self.str[1..];
                 },
                 ';', '\n' => {

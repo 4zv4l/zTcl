@@ -17,11 +17,10 @@ pub const StatementIterator = struct {
 
         while (try self.tokenit.next()) |token| {
             std.debug.print("got token: {}\n", .{token});
-
-            try self.tokens.append(try self.ally.dupe(u8, switch (token) {
+            const exp = switch (token) {
+                .bracket => |str| try self.tcl.eval(str),
                 .quote => |str| try self.tcl.interpolate(str),
                 .variable => |str| self.tcl.vars.get(str).?,
-                .bracket => |str| try self.tcl.eval(str),
                 .brace, .string => |str| str,
                 .ends => {
                     if (self.tokens.items.len == 0) {
@@ -30,8 +29,15 @@ pub const StatementIterator = struct {
                         return try self.tokens.toOwnedSlice();
                     }
                 },
-            }));
+            };
+            switch (token) {
+                // already duped by eval/interpolate
+                .bracket, .quote => try self.tokens.append(exp),
+                else => try self.tokens.append(try self.ally.dupe(u8, exp)),
+            }
         }
+
+        if (self.tokens.items.len > 0) return try self.tokens.toOwnedSlice();
         return null;
     }
 };
