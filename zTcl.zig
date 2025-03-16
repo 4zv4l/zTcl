@@ -286,6 +286,20 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     switch (args.len) {
+        1 => {
+            var bin = std.io.bufferedReader(std.io.getStdIn().reader());
+            var buff: [4096]u8 = undefined;
+            var tcl = try Tcl.init(allocator);
+            defer tcl.deinit();
+
+            print("zTcl v0.1\n", .{});
+            print("> ", .{});
+            while (try bin.reader().readUntilDelimiterOrEof(&buff, '\n')) |line| {
+                const retval = try tcl.eval(line);
+                defer tcl.ally.free(retval);
+                print("{s}> ", .{retval});
+            }
+        },
         2 => {
             const filedata = try std.fs.cwd().readFileAlloc(allocator, args[1], std.math.maxInt(usize));
             defer allocator.free(filedata);
