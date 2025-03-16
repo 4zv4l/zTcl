@@ -26,6 +26,7 @@ pub fn tclSet(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclUnset(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 1) @panic("unset: missing variable name to unset");
     if (tcl.vars.getEntry(args[0])) |_| {
         const ptr = tcl.vars.fetchRemove(args[0]);
         tcl.ally.free(ptr.?.key);
@@ -42,6 +43,7 @@ pub fn tclDumpVar(tcl: *Tcl, _: []const []const u8) []const u8 {
 }
 
 pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 3) @panic("proc: missing argument");
     var params = std.ArrayList([]const u8).init(tcl.ally);
     errdefer params.deinit();
     //const name = tcl.ally.dupe(u8, args[0]) catch @panic("dupe name");
@@ -62,6 +64,7 @@ pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("if: missing argument");
     const cond = args[0];
     const ifok = args[1];
     const cond_result = tcl.eval(cond) catch @panic("while eval cond");
@@ -87,6 +90,7 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclWhile(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("while: missing argument");
     const cond = args[0];
     const body = args[1];
 
@@ -102,12 +106,14 @@ pub fn tclWhile(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclEql(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("eql: missing argument");
     if (std.mem.eql(u8, args[0], args[1])) {
         return tcl.ally.dupe(u8, "1") catch @panic("eql");
     }
     return tcl.ally.dupe(u8, "0") catch @panic("eql");
 }
 pub fn tclNotEql(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("noteql: missing argument");
     if (!std.mem.eql(u8, args[0], args[1])) {
         return tcl.ally.dupe(u8, "1") catch @panic("eql");
     }
@@ -115,24 +121,28 @@ pub fn tclNotEql(tcl: *Tcl, args: []const []const u8) []const u8 {
 }
 
 pub fn tclPlus(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("plus: missing argument");
     const n1 = std.fmt.parseInt(isize, args[0], 10) catch 0;
     const n2 = std.fmt.parseInt(isize, args[1], 10) catch 0;
     return std.fmt.allocPrint(tcl.ally, "{d}", .{n1 + n2}) catch "";
 }
 
 pub fn tclMinus(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("minus: missing argument");
     const n1 = std.fmt.parseInt(isize, args[0], 10) catch 0;
     const n2 = std.fmt.parseInt(isize, args[1], 10) catch 0;
     return std.fmt.allocPrint(tcl.ally, "{d}", .{n1 - n2}) catch "";
 }
 
 pub fn tclMultiply(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("multiply: missing argument");
     const n1 = std.fmt.parseInt(isize, args[0], 10) catch 0;
     const n2 = std.fmt.parseInt(isize, args[1], 10) catch 0;
     return std.fmt.allocPrint(tcl.ally, "{d}", .{n1 * n2}) catch "";
 }
 
 pub fn tclDivise(tcl: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 2) @panic("divise: missing argument");
     const n1 = std.fmt.parseInt(isize, args[0], 10) catch 0;
     const n2 = std.fmt.parseInt(isize, args[1], 10) catch 0;
     if (n2 == 0) {
