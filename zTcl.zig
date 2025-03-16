@@ -4,6 +4,7 @@ const print = std.debug.print;
 
 // Builtins
 pub fn tclPuts(_: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 1) @panic("puts: missing argument");
     print("{s}\n", .{args[0]});
     return "";
 }
@@ -65,9 +66,11 @@ pub fn tclProc(tcl: *Tcl, args: []const []const u8) []const u8 {
 
 pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
     if (args.len < 2) @panic("if: missing argument");
-    const cond = args[0];
-    const ifok = args[1];
-    const cond_result = tcl.eval(cond) catch @panic("while eval cond");
+    const cond = tcl.interpolate(args[0]) catch @panic("eval cond");
+    defer tcl.ally.free(cond);
+    const ifok = tcl.interpolate(args[1]) catch @panic("eval ifok");
+    defer tcl.ally.free(ifok);
+    const cond_result = tcl.eval(cond) catch @panic("if eval cond");
     defer tcl.ally.free(cond_result);
 
     switch (args.len) {
@@ -77,8 +80,9 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
             }
         },
         4 => {
-            const ifnot = args[3]; // skip else keyword
-
+            // skip else keyword
+            const ifnot = tcl.interpolate(args[1]) catch @panic("eval ifnot");
+            defer tcl.ally.free(ifnot);
             if (std.mem.eql(u8, cond_result, "1")) {
                 return tcl.eval(ifok) catch @panic("eval else ifok");
             }
@@ -91,10 +95,13 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
 
 pub fn tclWhile(tcl: *Tcl, args: []const []const u8) []const u8 {
     if (args.len < 2) @panic("while: missing argument");
-    const cond = args[0];
-    const body = args[1];
 
     while (true) {
+        const cond = tcl.interpolate(args[0]) catch @panic("eval cond");
+        defer tcl.ally.free(cond);
+        const body = tcl.interpolate(args[1]) catch @panic("eval body");
+        defer tcl.ally.free(body);
+
         const cond_result = tcl.eval(cond) catch @panic("while eval cond");
         defer tcl.ally.free(cond_result);
         if (cond_result[0] == '0') break;
