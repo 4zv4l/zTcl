@@ -55,22 +55,22 @@ pub const TokenIterator = struct {
                     return .ends;
                 },
                 '#' => {
-                    const idx = std.mem.indexOfAny(u8, self.str, "\n\r") orelse return error.Missing;
+                    const idx = std.mem.indexOfAny(u8, self.str, "\n\r") orelse self.str.len - 1;
                     self.str = self.str[idx + 1 ..];
                     return .ends;
                 },
                 '{' => {
-                    const idx = findClosing(self.str[1..], '{', '}') orelse return error.Missing;
+                    const idx = findClosing(self.str[1..], '{', '}') orelse return error.MissingClosingBrace;
                     defer self.str = self.str[idx + 1 ..];
                     return .{ .brace = self.str[1..idx] };
                 },
                 '"' => {
-                    const idx = findClosing(self.str[1..], '"', '"') orelse return error.Missing;
+                    const idx = findClosing(self.str[1..], '"', '"') orelse return error.MissingClosingQuote;
                     defer self.str = self.str[idx + 1 ..];
                     return .{ .quote = self.str[1..idx] };
                 },
                 '[' => {
-                    const idx = findClosing(self.str[1..], '[', ']') orelse return error.Missing;
+                    const idx = findClosing(self.str[1..], '[', ']') orelse return error.MissingClosingBracket;
                     defer self.str = self.str[idx + 1 ..];
                     return .{ .bracket = self.str[1..idx] };
                 },
