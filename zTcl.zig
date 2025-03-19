@@ -4,8 +4,31 @@ const print = std.debug.print;
 
 // Builtins
 pub fn tclPuts(_: *Tcl, args: []const []const u8) []const u8 {
-    if (args.len < 1) @panic("puts: missing argument");
-    print("{s}\n", .{args[0]});
+    switch (args.len) {
+        1 => print("{s}\n", .{args[0]}),
+        2 => std.fs.cwd().writeFile(.{ .sub_path = args[0], .data = args[1] }) catch {},
+        else => @panic("weird argument number for puts"),
+    }
+    return "";
+}
+
+pub fn tclPrint(_: *Tcl, args: []const []const u8) []const u8 {
+    if (args.len < 1) @panic("print: missing argument");
+    print("{s}", .{args[0]});
+    return "";
+}
+
+pub fn tclGets(tcl: *Tcl, args: []const []const u8) []const u8 {
+    switch (args.len) {
+        0 => {
+            var stdin = std.io.getStdIn().reader();
+            return stdin.readUntilDelimiterAlloc(tcl.ally, '\n', 4096) catch "";
+        },
+        1 => {
+            return std.fs.cwd().readFileAlloc(tcl.ally, args[0], std.math.maxInt(usize)) catch "";
+        },
+        else => @panic("weird argument number for gets"),
+    }
     return "";
 }
 
@@ -179,6 +202,8 @@ pub const Tcl = struct {
             .vars = .init(allocator),
         };
         try tcl.commands.put("puts", .{ .builtin = .{ .proc = tclPuts } });
+        try tcl.commands.put("print", .{ .builtin = .{ .proc = tclPrint } });
+        try tcl.commands.put("gets", .{ .builtin = .{ .proc = tclGets } });
         try tcl.commands.put("set", .{ .builtin = .{ .proc = tclSet } });
         try tcl.commands.put("unset", .{ .builtin = .{ .proc = tclUnset } });
         try tcl.commands.put("dumpvar", .{ .builtin = .{ .proc = tclDumpVar } });
