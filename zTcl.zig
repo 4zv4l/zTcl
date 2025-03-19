@@ -104,7 +104,7 @@ pub fn tclIf(tcl: *Tcl, args: []const []const u8) []const u8 {
         },
         4 => {
             // skip else keyword
-            const ifnot = tcl.interpolate(args[1]) catch @panic("eval ifnot");
+            const ifnot = tcl.interpolate(args[3]) catch @panic("eval ifnot");
             defer tcl.ally.free(ifnot);
             if (std.mem.eql(u8, cond_result, "1")) {
                 return tcl.eval(ifok) catch @panic("eval else ifok");
